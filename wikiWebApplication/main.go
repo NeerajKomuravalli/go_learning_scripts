@@ -1,14 +1,17 @@
 package main
 
 import (
-	"fmt"
+	"errors"
 	"html/template"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"regexp"
 )
 
 var savePath string = "SavesPagesData"
+var templates = template.Must(template.ParseFiles("view.html", "edit.html"))
+var validPath = regexp.MustCompile("^/(edit|save|view)/([a-zA-Z0-9]+)$")
 
 type Page struct {
 	Title string
@@ -27,38 +30,64 @@ func loadPage(title string) (p *Page, err error) {
 	return &Page{Title: title, Body: []byte(body)}, err
 }
 
+func getTitle(w http.ResponseWriter, r *http.Request) (string, error) {
+	match := validPath.FindStringSubmatch(r.URL.Path)
+	if match == nil {
+		http.NotFound(w, r)
+		return "", errors.New("invalid Page Title")
+	}
+	return match[2], nil
+}
+
 func viewHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/view/"):]
+	title, err := getTitle(w, r)
+	if err != nil {
+		return
+	}
 	page, err := loadPage(title)
 	if err != nil {
-		fmt.Fprintf(w, "404 Page Not Found")
+		http.Redirect(w, r, "/edit/"+title, http.StatusFound)
+		return
 	}
-	viewTemplate, _ := template.ParseFiles("view.html")
-	viewTemplate.Execute(w, page)
+	renderTemplate(w, "view.html", page)
 }
 
 func editHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/edit/"):]
+	// title := r.URL.Path[len("/edit/"):]
+	title, err := getTitle(w, r)
+	if err != nil {
+		return
+	}
 	page, err := loadPage(title)
 	if err != nil {
 		page = &Page{Title: title}
 	}
-	editTemplate, _ := template.ParseFiles("edit.html")
-	editTemplate.Execute(w, page)
+	renderTemplate(w, "edit.html", page)
 }
 
 func saveHandler(w http.ResponseWriter, r *http.Request) {
-	title := r.URL.Path[len("/save/"):]
+	title, err := getTitle(w, r)
+	if err != nil {
+		return
+	}
 	body := r.FormValue("body")
 	page := &Page{Title: title, Body: []byte(body)}
-	page.save()
+	err = page.save()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/view/"+title, http.StatusFound)
+}
+
+func renderTemplate(w http.ResponseWriter, templateName string, page *Page) {
+	err := templates.ExecuteTemplate(w, templateName, page)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func main() {
-	// p := &Page{Title: "Testing", Body: []byte("This is just a test doc!")}
-	// p.save()
-	// loadedPage, _ := loadPage("Testing")
-	// fmt.Println(string(loadedPage.Body))
 	http.HandleFunc("/view/", viewHandler)
 	http.HandleFunc("/edit/", editHandler)
 	http.HandleFunc("/save/", saveHandler)
