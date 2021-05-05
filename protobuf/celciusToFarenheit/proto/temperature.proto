@@ -1,0 +1,12 @@
+syntax = "proto3";
+
+option go_package = "./temperature";
+
+service TempratureConversion {
+    rpc ConvertFromCelsiusToFarenheit(Temprature) returns (Temprature);
+    rpc ConvertFromFarenheitToCelsius(Temprature) returns (Temprature);
+}
+
+message Temprature {
+    double Temprature = 1;
+}
